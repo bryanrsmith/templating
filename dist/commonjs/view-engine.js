@@ -10,8 +10,6 @@ var LogManager = _interopRequireWildcard(require("aurelia-logging"));
 
 var Loader = require("aurelia-loader").Loader;
 
-var relativeToFile = require("aurelia-path").relativeToFile;
-
 var ViewCompiler = require("./view-compiler").ViewCompiler;
 
 var _resourceRegistry = require("./resource-registry");
@@ -19,8 +17,7 @@ var _resourceRegistry = require("./resource-registry");
 var ResourceRegistry = _resourceRegistry.ResourceRegistry;
 var ViewResources = _resourceRegistry.ViewResources;
 
-var importSplitter = /\s*,\s*/,
-    logger = LogManager.getLogger("templating");
+var logger = LogManager.getLogger("templating");
 
 var ViewEngine = exports.ViewEngine = (function () {
   function ViewEngine(loader, viewCompiler, appResources) {
@@ -29,7 +26,6 @@ var ViewEngine = exports.ViewEngine = (function () {
     this.loader = loader;
     this.viewCompiler = viewCompiler;
     this.appResources = appResources;
-    this.importedViews = {};
   }
 
   _prototypeProperties(ViewEngine, {
@@ -45,20 +41,20 @@ var ViewEngine = exports.ViewEngine = (function () {
       value: function loadViewFactory(url, compileOptions, associatedModuleId) {
         var _this = this;
 
-        var existing = this.importedViews[url];
-        if (existing) {
-          return Promise.resolve(existing);
-        }
+        return this.loader.loadTemplate(url).then(function (viewRegistryEntry) {
+          if (viewRegistryEntry.isReady) {
+            return viewRegistryEntry.factory;
+          }
 
-        return this.loader.loadTemplate(url).then(function (template) {
-          return _this.loadTemplateResources(url, template, associatedModuleId).then(function (resources) {
-            existing = _this.importedViews[url];
-            if (existing) {
-              return existing;
+          return _this.loadTemplateResources(viewRegistryEntry, associatedModuleId).then(function (resources) {
+            if (viewRegistryEntry.isReady) {
+              return viewRegistryEntry.factory;
             }
 
-            var viewFactory = _this.viewCompiler.compile(template, resources, compileOptions);
-            _this.importedViews[url] = viewFactory;
+            viewRegistryEntry.setResources(resources);
+
+            var viewFactory = _this.viewCompiler.compile(viewRegistryEntry.template, resources, compileOptions);
+            viewRegistryEntry.setFactory(viewFactory);
             return viewFactory;
           });
         });
@@ -67,61 +63,39 @@ var ViewEngine = exports.ViewEngine = (function () {
       configurable: true
     },
     loadTemplateResources: {
-      value: function loadTemplateResources(templateUrl, template, associatedModuleId) {
+      value: function loadTemplateResources(viewRegistryEntry, associatedModuleId) {
         var _this = this;
 
-        var importIds,
-            names,
+        var resources = new ViewResources(this.appResources, viewRegistryEntry.id),
+            dependencies = viewRegistryEntry.dependencies,
+            associatedModule,
+            importIds,
             i,
-            ii,
-            src,
-            current,
-            registry = new ViewResources(this.appResources, templateUrl),
-            dxImportElements = template.content.querySelectorAll("import"),
-            associatedModule;
+            ii;
 
-        if (dxImportElements.length === 0 && !associatedModuleId) {
-          return Promise.resolve(registry);
+        if (dependencies.length === 0 && !associatedModuleId) {
+          return Promise.resolve(resources);
         }
 
-        importIds = new Array(dxImportElements.length);
-        names = new Array(dxImportElements.length);
-
-        for (i = 0, ii = dxImportElements.length; i < ii; ++i) {
-          current = dxImportElements[i];
-          src = current.getAttribute("from");
-
-          if (!src) {
-            throw new Error("Import element in " + templateUrl + " has no \"from\" attribute.");
-          }
-
-          importIds[i] = src;
-          names[i] = current.getAttribute("as");
-
-          if (current.parentNode) {
-            current.parentNode.removeChild(current);
-          }
-        }
-
-        importIds = importIds.map(function (x) {
-          return relativeToFile(x, templateUrl);
+        importIds = dependencies.map(function (x) {
+          return x.src;
         });
-        logger.debug("importing resources for " + templateUrl, importIds);
+        logger.debug("importing resources for " + viewRegistryEntry.id, importIds);
 
         return this.resourceCoordinator.importResourcesFromModuleIds(importIds).then(function (toRegister) {
           for (i = 0, ii = toRegister.length; i < ii; ++i) {
-            toRegister[i].register(registry, names[i]);
+            toRegister[i].register(resources, dependencies[i].name);
           }
 
           if (associatedModuleId) {
             associatedModule = _this.resourceCoordinator.getExistingModuleAnalysis(associatedModuleId);
 
             if (associatedModule) {
-              associatedModule.register(registry);
+              associatedModule.register(resources);
             }
           }
 
-          return registry;
+          return resources;
         });
       },
       writable: true,

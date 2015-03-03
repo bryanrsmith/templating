@@ -203,59 +203,17 @@ System.register(["aurelia-loader", "aurelia-path", "aurelia-dependency-injection
             writable: true,
             configurable: true
           },
-          importResources: {
-            value: function importResources(imports, resourceManifestUrl) {
-              var i,
-                  ii,
-                  current,
-                  annotation,
-                  existing,
-                  lookup = {},
-                  finalModules = [],
-                  importIds = [],
-                  analysis,
-                  type;
-
-              var container = this.container;
-
-              for (i = 0, ii = imports.length; i < ii; ++i) {
-                current = imports[i];
-                annotation = Origin.get(current);
-
-                if (!annotation) {
-                  analysis = analyzeModule({ "default": current });
-                  analysis.analyze(container);
-                  type = (analysis.element || analysis.resources[0]).type;
-
-                  if (resourceManifestUrl) {
-                    annotation = new Origin(relativeToFile("./" + type.name, resourceManifestUrl));
-                  } else {
-                    annotation = new Origin(join(this.appResources.baseResourceUrl, type.name));
-                  }
-
-                  Origin.set(current, annotation);
-                }
-
-                existing = lookup[annotation.moduleId];
-
-                if (!existing) {
-                  existing = {};
-                  importIds.push(annotation.moduleId);
-                  finalModules.push(existing);
-                  lookup[annotation.moduleId] = existing;
-                }
-
-                existing[nextId()] = current;
-              }
-
-              return this.importResourcesFromModules(finalModules, importIds);
-            },
-            writable: true,
-            configurable: true
-          },
           importResourcesFromModuleIds: {
-            value: function importResourcesFromModuleIds(importIds) {
+            value: function importResourcesFromModuleIds(importIds, resourceManifestUrl) {
               var _this = this;
+
+              var i, ii;
+
+              if (resourceManifestUrl) {
+                for (i = 0, ii = importIds.length; i < ii; ++i) {
+                  importIds[i] = join(resourceManifestUrl, importIds[i]);
+                }
+              }
 
               return this.loader.loadAllModules(importIds).then(function (imports) {
                 return _this.importResourcesFromModules(imports, importIds);
